@@ -3,11 +3,11 @@
 GitLab Code Search & Download Tool
 
 Usage:
-    ./gitlab_code_search.py <search_query> --hostname HOST [--workers N]
+    glab-search-code <search_query> --hostname HOST [--workers N]
 
 Examples:
-    ./gitlab_code_search.py 'GeneratedValue' --hostname gitlab.example.com
-    ./gitlab_code_search.py 'class MyService' --hostname gitlab.example.com --workers 20
+    glab-search-code 'GeneratedValue' --hostname gitlab.example.com
+    glab-search-code 'class MyService' --hostname gitlab.example.com --workers 20
 """
 
 import argparse

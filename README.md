@@ -1,4 +1,4 @@
-# glab-code-search
+# glab-search-code
 
 A powerful async tool for searching and downloading files from GitLab repositories using the `glab` CLI.
 
@@ -27,23 +27,23 @@ A powerful async tool for searching and downloading files from GitLab repositori
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd glab-code-search
+cd glab-search-code
 
 # Install globally with pipx
 pipx install .
 
 # Now you can use it from anywhere
-glab-search 'your-search-query' --hostname gitlab.example.com
+glab-search-code 'your-search-query' --hostname gitlab.example.com
 ```
 
 To upgrade after making changes:
 ```bash
-pipx upgrade glab-code-search
+pipx upgrade glab-search-code
 ```
 
 To uninstall:
 ```bash
-pipx uninstall glab-code-search
+pipx uninstall glab-search-code
 ```
 
 ### Using uv (for development)
@@ -51,13 +51,13 @@ pipx uninstall glab-code-search
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd glab-code-search
+cd glab-search-code
 
 # Install with uv
 uv sync
 
 # Run directly
-uv run glab-search 'your-search-query' --hostname gitlab.example.com
+uv run glab-search-code 'your-search-query' --hostname gitlab.example.com
 ```
 
 ### Using pip
@@ -65,13 +65,13 @@ uv run glab-search 'your-search-query' --hostname gitlab.example.com
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd glab-code-search
+cd glab-search-code
 
 # Install the package
 pip install .
 
 # Run the tool
-glab-search 'your-search-query' --hostname gitlab.example.com
+glab-search-code 'your-search-query' --hostname gitlab.example.com
 ```
 
 ## Usage
@@ -79,7 +79,7 @@ glab-search 'your-search-query' --hostname gitlab.example.com
 ### Basic Search
 
 ```bash
-glab-search 'GeneratedValue' --hostname gitlab.example.com
+glab-search-code 'GeneratedValue' --hostname gitlab.example.com
 ```
 
 ### Custom Worker Count
@@ -87,7 +87,7 @@ glab-search 'GeneratedValue' --hostname gitlab.example.com
 Increase parallel downloads for faster processing:
 
 ```bash
-glab-search 'class MyService' --hostname gitlab.example.com --workers 20
+glab-search-code 'class MyService' --hostname gitlab.example.com --workers 20
 ```
 
 ### Custom Retry Settings
@@ -95,7 +95,7 @@ glab-search 'class MyService' --hostname gitlab.example.com --workers 20
 Adjust retry behavior for rate-limited requests:
 
 ```bash
-glab-search 'import requests' --hostname gitlab.example.com --max-retries 5
+glab-search-code 'import requests' --hostname gitlab.example.com --max-retries 5
 ```
 
 ## Command Line Options
@@ -140,17 +140,18 @@ jq -r '.[] | .project_path' /tmp/gitlab-search-<query>-<timestamp>/metadata.json
 uv sync
 
 # Run linter
-uv run ruff check glab_code_search.py
+uv run ruff check glab_search_code
 
 # Format code
-uv run ruff format glab_code_search.py
+uv run ruff format glab_search_code
 ```
 
 ### Project Structure
 
 ```
-glab-code-search/
-├── glab_code_search.py    # Main script
+glab-search-code/
+├── glab_search_code/       # Main package
+│   └── __init__.py         # Main script
 ├── pyproject.toml          # Project metadata and dependencies
 ├── README.md               # This file
 └── .gitignore

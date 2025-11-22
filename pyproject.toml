@@ -1,5 +1,5 @@
 [project]
-name = "glab-code-search"
+name = "glab-search-code"
 version = "0.1.0"
 description = "GitLab code search and download tool using glab CLI"
 readme = "README.md"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.scripts]
-glab-search = "glab_code_search:cli"
+glab-search-code = "glab_search_code:cli"
 
 [tool.ruff]
 line-length = 120
