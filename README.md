@@ -107,7 +107,7 @@ glab-search-code 'import requests' --hostname gitlab.example.com --max-retries 5
 
 ## Output
 
-All downloads are stored in `/tmp/gitlab-search-<query>-<timestamp>/`:
+All downloads are stored in `/tmp/glab-code-search-<timestamp>/`:
 
 - Downloaded files with sanitized names (`project__path__to__file.ext`)
 - `metadata.json`: Maps downloaded files to their GitLab source locations
@@ -119,16 +119,16 @@ After the download completes, the tool suggests useful commands:
 
 ```bash
 # View complete download log
-less /tmp/gitlab-search-<query>-<timestamp>/download.log
+less /tmp/glab-code-search-<timestamp>/download.log
 
 # View only failed downloads
-grep FAIL /tmp/gitlab-search-<query>-<timestamp>/download.log
+grep FAIL /tmp/glab-code-search-<timestamp>/download.log
 
 # Search downloaded files
-grep -r 'pattern' /tmp/gitlab-search-<query>-<timestamp>
+grep -r 'pattern' /tmp/glab-code-search-<timestamp>
 
 # List unique projects
-jq -r '.[] | .project_path' /tmp/gitlab-search-<query>-<timestamp>/metadata.json | sort -u
+jq -r '.[] | .project_path' /tmp/glab-code-search-<timestamp>/metadata.json | sort -u
 ```
 
 ## Development

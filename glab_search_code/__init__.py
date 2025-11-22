@@ -69,9 +69,8 @@ class GitLabSearcher:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        sanitized = re.sub(r"[^a-zA-Z0-9._-]", "_", search_term).lower()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = Path(f"/tmp/gitlab-search-{sanitized}-{timestamp}")
+        self.output_dir = Path(f"/tmp/glab-code-search-{timestamp}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.log_file = self.output_dir / "download.log"
