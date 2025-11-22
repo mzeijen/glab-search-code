@@ -15,28 +15,27 @@ import asyncio
 import base64
 import json
 import re
-import subprocess
 import sys
-import yaml
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import quote
+
+import yaml
 
 
 class Colors:
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    BLUE = '\033[0;34m'
-    NC = '\033[0m'
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    NC = "\033[0m"
 
 
-def get_glab_hostnames() -> List[str]:
+def get_glab_hostnames() -> list[str]:
     # Parse glab config to get available GitLab hostnames. This ensures users
     # can only specify hostnames they've already configured, preventing typos
     # and misconfiguration.
-    config_path = Path.home() / '.config' / 'glab-cli' / 'config.yml'
+    config_path = Path.home() / ".config" / "glab-cli" / "config.yml"
 
     if not config_path.exists():
         return []
@@ -45,16 +44,23 @@ def get_glab_hostnames() -> List[str]:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        if not config or 'hosts' not in config:
+        if not config or "hosts" not in config:
             return []
 
-        return list(config['hosts'].keys())
+        return list(config["hosts"].keys())
     except (yaml.YAMLError, OSError):
         return []
 
 
 class GitLabSearcher:
-    def __init__(self, search_term: str, hostname: Optional[str] = None, workers: int = 10, max_retries: int = 3, retry_delay: int = 2):
+    def __init__(
+        self,
+        search_term: str,
+        hostname: str | None = None,
+        workers: int = 10,
+        max_retries: int = 3,
+        retry_delay: int = 2,
+    ):
         # Timestamp in directory name prevents accidental overwrites when running
         # multiple searches, and sanitizing ensures filesystem compatibility.
         self.search_term = search_term
@@ -63,8 +69,8 @@ class GitLabSearcher:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-        sanitized = re.sub(r'[^a-zA-Z0-9._-]', '_', search_term).lower()
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sanitized = re.sub(r"[^a-zA-Z0-9._-]", "_", search_term).lower()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = Path(f"/tmp/gitlab-search-{sanitized}-{timestamp}")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -80,7 +86,7 @@ class GitLabSearcher:
         # Cache avoids redundant API calls since many files often belong to the
         # same project. Pre-fetching all projects upfront is faster than fetching
         # on-demand during downloads.
-        self.project_cache: Dict[str, str] = {}
+        self.project_cache: dict[str, str] = {}
 
         self.log(f"Script started - search query: {search_term}")
 
@@ -88,10 +94,10 @@ class GitLabSearcher:
         # Single-line atomic appends ensure log integrity even when parallel workers
         # write simultaneously. Timestamps help correlate failures with retries.
         timestamp = datetime.now().isoformat()
-        with open(self.log_file, 'a') as f:
+        with open(self.log_file, "a") as f:
             f.write(f"[{timestamp}] {message}\n")
 
-    def print_color(self, message: str, color: str = ''):
+    def print_color(self, message: str, color: str = ""):
         # Color coding helps quickly identify success/failures in terminal output
         # without having to parse text. NC (No Color) reset prevents color bleed.
         if color:
@@ -104,29 +110,25 @@ class GitLabSearcher:
         # Returning all three values (stdout, stderr, code) enables proper error handling
         # and retry logic based on specific failure types (e.g., 429 rate limits).
         # Hostname flag is injected here to ensure all glab calls use the correct instance.
-        glab_args = ['glab']
+        glab_args = ["glab"]
         if self.hostname:
-            glab_args.extend(['--hostname', self.hostname])
+            glab_args.extend(["--hostname", self.hostname])
         glab_args.extend(args)
 
         proc = await asyncio.create_subprocess_exec(
-            *glab_args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            *glab_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
         return stdout.decode(), stderr.decode(), proc.returncode
 
-    async def search_all(self) -> List[dict]:
+    async def search_all(self) -> list[dict]:
         # Using --paginate is essential for large result sets (>100 files) as it
         # automatically handles pagination instead of requiring manual page tracking.
         self.print_color("\nFetching all search results (this may take a moment)...", Colors.BLUE)
         self.log(f"Starting search for: {self.search_term}")
 
         stdout, stderr, code = await self.run_glab(
-            'api',
-            f'search?scope=blobs&search={self.search_term}&per_page=100',
-            '--paginate'
+            "api", f"search?scope=blobs&search={self.search_term}&per_page=100", "--paginate"
         )
 
         if code != 0:
@@ -138,7 +140,7 @@ class GitLabSearcher:
         # single array, so we must fix the format before parsing. This quirk is
         # specific to glab's pagination implementation.
         try:
-            fixed_json = stdout.replace('][', ',')
+            fixed_json = stdout.replace("][", ",")
             results = json.loads(fixed_json)
         except json.JSONDecodeError as e:
             self.log(f"ERROR: Failed to parse search results - {e}")
@@ -156,12 +158,12 @@ class GitLabSearcher:
         if project_id in self.project_cache:
             return self.project_cache[project_id]
 
-        stdout, stderr, code = await self.run_glab('api', f'projects/{project_id}')
+        stdout, stderr, code = await self.run_glab("api", f"projects/{project_id}")
 
         if code == 0:
             try:
                 project_data = json.loads(stdout)
-                path = project_data.get('path_with_namespace', f'project-{project_id}')
+                path = project_data.get("path_with_namespace", f"project-{project_id}")
                 self.project_cache[project_id] = path
                 return path
             except json.JSONDecodeError:
@@ -169,17 +171,17 @@ class GitLabSearcher:
 
         # Fallback to ID-based name ensures the script continues even if project
         # metadata fetch fails, preventing total failure due to transient API issues.
-        self.project_cache[project_id] = f'project-{project_id}'
+        self.project_cache[project_id] = f"project-{project_id}"
         return self.project_cache[project_id]
 
-    async def prefetch_projects(self, results: List[dict]):
+    async def prefetch_projects(self, results: list[dict]):
         # Pre-fetching all projects in parallel before downloads avoids repeated
         # cache misses during downloads. This front-loaded cost significantly speeds
         # up the overall process compared to lazy on-demand fetching.
         self.print_color("\nPre-fetching project information...", Colors.BLUE)
         self.log("Starting project cache pre-fetch")
 
-        unique_projects = set(str(r['project_id']) for r in results)
+        unique_projects = {str(r["project_id"]) for r in results}
 
         tasks = [self.get_project_path(pid) for pid in unique_projects]
         await asyncio.gather(*tasks)
@@ -192,16 +194,16 @@ class GitLabSearcher:
         # projects have files with the same name. Double underscores for path
         # separators are visually distinct and filesystem-safe.
         combined = f"{project_path}__{file_path}"
-        return re.sub(r'[^a-zA-Z0-9._-]', '_', combined.replace('/', '__'))
+        return re.sub(r"[^a-zA-Z0-9._-]", "_", combined.replace("/", "__"))
 
     async def download_file(self, item: dict, semaphore: asyncio.Semaphore) -> dict:
         # Semaphore limits concurrent downloads to prevent overwhelming the GitLab API
         # and triggering rate limits. Workers default to 10 as a balance between speed
         # and staying under rate limit thresholds.
         async with semaphore:
-            project_id = str(item['project_id'])
-            file_path = item['filename']
-            ref = item['ref']
+            project_id = str(item["project_id"])
+            file_path = item["filename"]
+            ref = item["ref"]
 
             project_path = await self.get_project_path(project_id)
             sanitized = self.sanitize_filename(project_path, file_path)
@@ -211,7 +213,7 @@ class GitLabSearcher:
             # wasted bandwidth on re-running the same search query.
             if output_file.exists():
                 self.log(f"SKIP: {project_path}/{file_path} (file already exists)")
-                return {'status': 'SKIP', 'project_path': project_path, 'file_path': file_path}
+                return {"status": "SKIP", "project_path": project_path, "file_path": file_path}
 
             # Retry loop specifically handles HTTP 429 (rate limit) errors with
             # exponential backoff, which is the most common failure mode with parallel
@@ -219,10 +221,9 @@ class GitLabSearcher:
             for retry in range(self.max_retries):
                 # URL encoding is required because file paths can contain special characters
                 # like spaces, which break the GitLab API if not properly encoded.
-                encoded_path = quote(file_path, safe='')
+                encoded_path = quote(file_path, safe="")
                 stdout, stderr, code = await self.run_glab(
-                    'api',
-                    f'projects/{project_id}/repository/files/{encoded_path}?ref={ref}'
+                    "api", f"projects/{project_id}/repository/files/{encoded_path}?ref={ref}"
                 )
 
                 if code == 0:
@@ -230,7 +231,7 @@ class GitLabSearcher:
                         # GitLab returns file content base64-encoded, requiring decode
                         # before writing to disk.
                         file_data = json.loads(stdout)
-                        content = base64.b64decode(file_data['content'])
+                        content = base64.b64decode(file_data["content"])
                         output_file.write_bytes(content)
 
                         if retry > 0:
@@ -239,36 +240,39 @@ class GitLabSearcher:
                             self.log(f"OK: {project_path}/{file_path}")
 
                         return {
-                            'status': 'OK',
-                            'project_id': project_id,
-                            'project_path': project_path,
-                            'file_path': file_path,
-                            'ref': ref,
-                            'output_file': sanitized
+                            "status": "OK",
+                            "project_id": project_id,
+                            "project_path": project_path,
+                            "file_path": file_path,
+                            "ref": ref,
+                            "output_file": sanitized,
                         }
                     except (json.JSONDecodeError, KeyError) as e:
                         self.log(f"FAIL: {project_path}/{file_path} - Error: Parse error {e}")
-                        return {'status': 'FAIL', 'project_path': project_path, 'file_path': file_path}
+                        return {"status": "FAIL", "project_path": project_path, "file_path": file_path}
 
                 # Only retry on 429 errors (rate limiting). Other errors (403, 404, etc.)
                 # are permanent and should not be retried.
-                if '429' in stderr:
-                    if retry < self.max_retries - 1:
-                        # Exponential backoff reduces API load and increases success rate
-                        # on subsequent retries after rate limit window expires.
-                        sleep_time = self.retry_delay * (retry + 1)
-                        self.log(f"RETRY: {project_path}/{file_path} - Rate limited, retry {retry + 1}/{self.max_retries} after {sleep_time}s")
-                        await asyncio.sleep(sleep_time)
-                        continue
+                if "429" in stderr and retry < self.max_retries - 1:
+                    # Exponential backoff reduces API load and increases success rate
+                    # on subsequent retries after rate limit window expires.
+                    sleep_time = self.retry_delay * (retry + 1)
+                    self.log(
+                        f"RETRY: {project_path}/{file_path} - Rate limited, retry {retry + 1}/{self.max_retries} after {sleep_time}s"
+                    )
+                    await asyncio.sleep(sleep_time)
+                    continue
 
-                error_msg = stderr.strip().split('\n')[0] if stderr else 'unknown error'
+                error_msg = stderr.strip().split("\n")[0] if stderr else "unknown error"
                 if retry >= self.max_retries - 1:
-                    self.log(f"FAIL: {project_path}/{file_path} - Error: {error_msg} (gave up after {self.max_retries} retries)")
+                    self.log(
+                        f"FAIL: {project_path}/{file_path} - Error: {error_msg} (gave up after {self.max_retries} retries)"
+                    )
                 else:
                     self.log(f"FAIL: {project_path}/{file_path} - Error: {error_msg}")
-                return {'status': 'FAIL', 'project_path': project_path, 'file_path': file_path}
+                return {"status": "FAIL", "project_path": project_path, "file_path": file_path}
 
-            return {'status': 'FAIL', 'project_path': project_path, 'file_path': file_path}
+            return {"status": "FAIL", "project_path": project_path, "file_path": file_path}
 
     def print_progress(self, total: int):
         # Real-time progress bar provides feedback during long downloads and helps
@@ -278,15 +282,18 @@ class GitLabSearcher:
         percent = (completed / total * 100) if total > 0 else 0
         bar_length = 40
         filled = int(bar_length * completed / total) if total > 0 else 0
-        bar = '=' * filled + '-' * (bar_length - filled)
+        bar = "=" * filled + "-" * (bar_length - filled)
 
-        print(f"\r[{bar}] {completed}/{total} ({percent:.1f}%) | "
-              f"{Colors.GREEN}✓{self.successful}{Colors.NC} "
-              f"{Colors.BLUE}⊘{self.skipped}{Colors.NC} "
-              f"{Colors.RED}✗{self.failed}{Colors.NC}",
-              end='', flush=True)
+        print(
+            f"\r[{bar}] {completed}/{total} ({percent:.1f}%) | "
+            f"{Colors.GREEN}✓{self.successful}{Colors.NC} "
+            f"{Colors.BLUE}⊘{self.skipped}{Colors.NC} "
+            f"{Colors.RED}✗{self.failed}{Colors.NC}",
+            end="",
+            flush=True,
+        )
 
-    async def download_all(self, results: List[dict]):
+    async def download_all(self, results: list[dict]):
         # asyncio.as_completed() yields results as they finish, allowing immediate
         # progress updates instead of waiting for all downloads to complete. This
         # provides better user feedback during long-running downloads.
@@ -301,12 +308,12 @@ class GitLabSearcher:
         for coro in asyncio.as_completed(tasks):
             result = await coro
 
-            if result['status'] == 'OK':
+            if result["status"] == "OK":
                 self.successful += 1
                 # Exclude 'status' from metadata since it's temporary tracking data,
                 # not useful for the metadata file which is used to locate downloaded files.
-                metadata.append({k: v for k, v in result.items() if k != 'status'})
-            elif result['status'] == 'SKIP':
+                metadata.append({k: v for k, v in result.items() if k != "status"})
+            elif result["status"] == "SKIP":
                 self.skipped += 1
             else:
                 self.failed += 1
@@ -318,7 +325,7 @@ class GitLabSearcher:
         # Metadata file maps sanitized filenames back to original GitLab locations,
         # enabling users to find where a downloaded file came from.
         self.print_color("\nFinalizing metadata...", Colors.BLUE)
-        with open(self.metadata_file, 'w') as f:
+        with open(self.metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)
 
         self.log(f"Downloads completed - OK: {self.successful}, SKIP: {self.skipped}, FAIL: {self.failed}")
@@ -338,6 +345,7 @@ class GitLabSearcher:
         self.print_color(f"Parallel jobs: {Colors.YELLOW}{self.workers}{Colors.NC}")
 
         import time
+
         start = time.time()
         results = await self.search_all()
         search_duration = int(time.time() - start)
@@ -396,29 +404,28 @@ async def main():
         hostname_help = "GitLab hostname to search (must be configured in glab)"
 
     parser = argparse.ArgumentParser(
-        description='GitLab Code Search & Download Tool',
+        description="GitLab Code Search & Download Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 Examples:
   %(prog)s 'GeneratedValue' --hostname gitlab.example.com
   %(prog)s 'class MyService' --hostname gitlab.example.com --workers 20
-        '''
+        """,
     )
-    parser.add_argument('search_query', help='Search term to find in GitLab')
-    parser.add_argument('--hostname', required=True, help=hostname_help)
-    parser.add_argument('--workers', type=int, default=10, help='Number of parallel downloads (default: 10)')
-    parser.add_argument('--max-retries', type=int, default=3, help='Max retries for rate-limited requests (default: 3)')
+    parser.add_argument("search_query", help="Search term to find in GitLab")
+    parser.add_argument("--hostname", required=True, help=hostname_help)
+    parser.add_argument("--workers", type=int, default=10, help="Number of parallel downloads (default: 10)")
+    parser.add_argument("--max-retries", type=int, default=3, help="Max retries for rate-limited requests (default: 3)")
 
     # Custom error handling to show available hostnames when --hostname is missing
     try:
         args = parser.parse_args()
     except SystemExit as e:
-        if e.code == 2 and available_hosts:  # Argument parsing error
+        if e.code == 2 and available_hosts and "--hostname" not in sys.argv:  # Argument parsing error
             # Check if --hostname was the issue by looking at sys.argv
-            if '--hostname' not in sys.argv:
-                print(f"\n{Colors.YELLOW}Available hostnames:{Colors.NC}")
-                for host in available_hosts:
-                    print(f"  - {host}")
+            print(f"\n{Colors.YELLOW}Available hostnames:{Colors.NC}")
+            for host in available_hosts:
+                print(f"  - {host}")
         raise
 
     # Validate hostname - must match a configured glab host to prevent typos and
@@ -440,9 +447,16 @@ Examples:
         print(f"{Colors.RED}Error: workers must be between 1 and 50{Colors.NC}")
         sys.exit(1)
 
-    searcher = GitLabSearcher(args.search_query, hostname=args.hostname, workers=args.workers, max_retries=args.max_retries)
+    searcher = GitLabSearcher(
+        args.search_query, hostname=args.hostname, workers=args.workers, max_retries=args.max_retries
+    )
     await searcher.run()
 
 
-if __name__ == '__main__':
+def cli():
+    """Entry point for the command line interface."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()
