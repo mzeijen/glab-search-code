@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import base64
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -23,12 +24,37 @@ from urllib.parse import quote
 import yaml
 
 
+def is_interactive_terminal() -> bool:
+    """
+    Detect if running in an interactive terminal vs AI tool/pipe/automation.
+
+    Returns True only if:
+    - stdin is a TTY (not piped/redirected)
+    - stdout is a TTY (output goes to terminal)
+    - No AI tool environment variables detected
+
+    This allows optimizing output: interactive terminals get colors and progress bars,
+    while AI tools get clean line-by-line output suitable for parsing.
+    """
+    # Check for known AI tool indicators
+    ai_indicators = ["CLAUDECODE", "AIDER", "CURSOR", "GITHUB_COPILOT"]
+    if any(os.environ.get(var) for var in ai_indicators):
+        return False
+
+    # Check if both stdin and stdout are TTYs
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
 class Colors:
-    RED = "\033[0;31m"
-    GREEN = "\033[0;32m"
-    YELLOW = "\033[1;33m"
-    BLUE = "\033[0;34m"
-    NC = "\033[0m"
+    """ANSI color codes, disabled for non-interactive terminals"""
+
+    _is_interactive = is_interactive_terminal()
+
+    RED = "\033[0;31m" if _is_interactive else ""
+    GREEN = "\033[0;32m" if _is_interactive else ""
+    YELLOW = "\033[1;33m" if _is_interactive else ""
+    BLUE = "\033[0;34m" if _is_interactive else ""
+    NC = "\033[0m" if _is_interactive else ""
 
 
 def get_glab_hostnames() -> list[str]:
@@ -68,6 +94,7 @@ class GitLabSearcher:
         self.workers = workers
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.is_interactive = is_interactive_terminal()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = Path(f"/tmp/glab-code-search-{timestamp}")
@@ -279,18 +306,27 @@ class GitLabSearcher:
         # keeps output compact instead of spamming hundreds of lines.
         completed = self.successful + self.skipped + self.failed
         percent = (completed / total * 100) if total > 0 else 0
-        bar_length = 40
-        filled = int(bar_length * completed / total) if total > 0 else 0
-        bar = "=" * filled + "-" * (bar_length - filled)
 
-        print(
-            f"\r[{bar}] {completed}/{total} ({percent:.1f}%) | "
-            f"{Colors.GREEN}✓{self.successful}{Colors.NC} "
-            f"{Colors.BLUE}⊘{self.skipped}{Colors.NC} "
-            f"{Colors.RED}✗{self.failed}{Colors.NC}",
-            end="",
-            flush=True,
-        )
+        if self.is_interactive:
+            # Interactive: use progress bar with \r to overwrite same line
+            bar_length = 40
+            filled = int(bar_length * completed / total) if total > 0 else 0
+            bar = "=" * filled + "-" * (bar_length - filled)
+
+            print(
+                f"\r[{bar}] {completed}/{total} ({percent:.1f}%) | "
+                f"{Colors.GREEN}✓{self.successful}{Colors.NC} "
+                f"{Colors.BLUE}⊘{self.skipped}{Colors.NC} "
+                f"{Colors.RED}✗{self.failed}{Colors.NC}",
+                end="",
+                flush=True,
+            )
+        else:
+            # Non-interactive (AI tools): print milestone updates every 10%
+            if completed == 1 or percent % 10 < (100 / total):
+                print(
+                    f"Progress: {completed}/{total} ({percent:.1f}%) | OK: {self.successful}, Skipped: {self.skipped}, Failed: {self.failed}"
+                )
 
     async def download_all(self, results: list[dict]):
         # asyncio.as_completed() yields results as they finish, allowing immediate
@@ -323,7 +359,8 @@ class GitLabSearcher:
 
         # Metadata file maps sanitized filenames back to original GitLab locations,
         # enabling users to find where a downloaded file came from.
-        self.print_color("\nFinalizing metadata...", Colors.BLUE)
+        if self.is_interactive:
+            self.print_color("\nFinalizing metadata...", Colors.BLUE)
         with open(self.metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)
 
@@ -334,21 +371,26 @@ class GitLabSearcher:
         # Main orchestration method that coordinates the three phases: search, cache,
         # download. Timing each phase helps identify bottlenecks (e.g., slow search vs
         # rate-limited downloads).
-        self.print_color("========================================", Colors.BLUE)
-        self.print_color("GitLab Code Search & Download", Colors.BLUE)
-        self.print_color("========================================", Colors.BLUE)
-        if self.hostname:
-            self.print_color(f"GitLab hostname: {Colors.YELLOW}{self.hostname}{Colors.NC}")
-        self.print_color(f"Search query: {Colors.YELLOW}{self.search_term}{Colors.NC}")
-        self.print_color(f"Output directory: {Colors.YELLOW}{self.output_dir}{Colors.NC}")
-        self.print_color(f"Parallel jobs: {Colors.YELLOW}{self.workers}{Colors.NC}")
+        if self.is_interactive:
+            self.print_color("========================================", Colors.BLUE)
+            self.print_color("GitLab Code Search & Download", Colors.BLUE)
+            self.print_color("========================================", Colors.BLUE)
+            if self.hostname:
+                self.print_color(f"GitLab hostname: {Colors.YELLOW}{self.hostname}{Colors.NC}")
+            self.print_color(f"Search query: {Colors.YELLOW}{self.search_term}{Colors.NC}")
+            self.print_color(f"Output directory: {Colors.YELLOW}{self.output_dir}{Colors.NC}")
+            self.print_color(f"Parallel jobs: {Colors.YELLOW}{self.workers}{Colors.NC}")
+        else:
+            # Non-interactive: only show search query once at the start
+            self.print_color(f"Search query: {Colors.YELLOW}{self.search_term}{Colors.NC}")
 
         import time
 
         start = time.time()
         results = await self.search_all()
         search_duration = int(time.time() - start)
-        self.print_color(f"Search completed in {Colors.GREEN}{search_duration}s{Colors.NC}\n")
+        if self.is_interactive:
+            self.print_color(f"Search completed in {Colors.GREEN}{search_duration}s{Colors.NC}\n")
 
         if not results:
             self.print_color("No results found", Colors.RED)
@@ -359,37 +401,50 @@ class GitLabSearcher:
         start = time.time()
         await self.prefetch_projects(results)
         prefetch_duration = int(time.time() - start)
-        self.print_color(f"Project pre-fetch completed in {Colors.GREEN}{prefetch_duration}s{Colors.NC}\n")
+        if self.is_interactive:
+            self.print_color(f"Project pre-fetch completed in {Colors.GREEN}{prefetch_duration}s{Colors.NC}\n")
 
         start = time.time()
         await self.download_all(results)
         download_duration = int(time.time() - start)
 
         # Summary
-        self.print_color("\n========================================", Colors.GREEN)
-        self.print_color("Download complete!", Colors.GREEN)
-        self.print_color("========================================", Colors.GREEN)
-        self.print_color(f"Search duration: {Colors.GREEN}{search_duration}s{Colors.NC}")
-        self.print_color(f"Project pre-fetch duration: {Colors.GREEN}{prefetch_duration}s{Colors.NC}")
-        self.print_color(f"Download duration: {Colors.GREEN}{download_duration}s{Colors.NC}")
-        self.print_color(f"Total files downloaded: {Colors.GREEN}{self.successful}{Colors.NC}")
-        self.print_color(f"Files skipped (existed): {Colors.BLUE}{self.skipped}{Colors.NC}")
-        self.print_color(f"Failed downloads: {Colors.RED}{self.failed}{Colors.NC}")
-        self.print_color(f"Output directory: {Colors.YELLOW}{self.output_dir}{Colors.NC}")
-        self.print_color(f"Metadata file: {Colors.YELLOW}{self.metadata_file}{Colors.NC}")
-        self.print_color(f"Log file: {Colors.YELLOW}{self.log_file}{Colors.NC}")
+        if self.is_interactive:
+            self.print_color("\n========================================", Colors.GREEN)
+            self.print_color("Download complete!", Colors.GREEN)
+            self.print_color("========================================", Colors.GREEN)
+            self.print_color(f"Search duration: {Colors.GREEN}{search_duration}s{Colors.NC}")
+            self.print_color(f"Project pre-fetch duration: {Colors.GREEN}{prefetch_duration}s{Colors.NC}")
+            self.print_color(f"Download duration: {Colors.GREEN}{download_duration}s{Colors.NC}")
+            self.print_color(f"Total files downloaded: {Colors.GREEN}{self.successful}{Colors.NC}")
+            self.print_color(f"Files skipped (existed): {Colors.BLUE}{self.skipped}{Colors.NC}")
+            self.print_color(f"Failed downloads: {Colors.RED}{self.failed}{Colors.NC}")
+            self.print_color(f"Output directory: {Colors.YELLOW}{self.output_dir}{Colors.NC}")
+            self.print_color(f"Metadata file: {Colors.YELLOW}{self.metadata_file}{Colors.NC}")
+            self.print_color(f"Log file: {Colors.YELLOW}{self.log_file}{Colors.NC}")
+        else:
+            # Non-interactive: minimal summary
+            print("\nDownload complete!")
+            self.print_color(f"Total files downloaded: {self.successful}")
+            if self.skipped > 0:
+                self.print_color(f"Files skipped (existed): {self.skipped}")
+            if self.failed > 0:
+                self.print_color(f"Failed downloads: {self.failed}")
+            self.print_color(f"Output directory: {self.output_dir}")
+            self.print_color(f"Metadata file: {self.metadata_file}")
 
-        print("\n" + Colors.BLUE + "Useful commands:" + Colors.NC)
-        print(Colors.BLUE + "────────────────────────────────────────" + Colors.NC)
-        print("View download log (including all failures):")
-        print(f"  {Colors.YELLOW}less {self.log_file}{Colors.NC}")
-        print("\nView only failed downloads:")
-        print(f"  {Colors.YELLOW}grep FAIL {self.log_file}{Colors.NC}")
-        print("\nSearch downloaded files:")
-        print(f"  {Colors.YELLOW}grep -r 'pattern' {self.output_dir}{Colors.NC}")
-        print("\nSee unique projects:")
-        print(f"  {Colors.YELLOW}jq -r '.[] | .project_path' {self.metadata_file} | sort -u{Colors.NC}")
-        print()
+        if self.is_interactive:
+            print("\n" + Colors.BLUE + "Useful commands:" + Colors.NC)
+            print(Colors.BLUE + "────────────────────────────────────────" + Colors.NC)
+            print("View download log (including all failures):")
+            print(f"  {Colors.YELLOW}less {self.log_file}{Colors.NC}")
+            print("\nView only failed downloads:")
+            print(f"  {Colors.YELLOW}grep FAIL {self.log_file}{Colors.NC}")
+            print("\nSearch downloaded files:")
+            print(f"  {Colors.YELLOW}grep -r 'pattern' {self.output_dir}{Colors.NC}")
+            print("\nSee unique projects:")
+            print(f"  {Colors.YELLOW}jq -r '.[] | .project_path' {self.metadata_file} | sort -u{Colors.NC}")
+            print()
 
 
 async def main():
