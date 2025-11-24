@@ -11,6 +11,7 @@ A powerful async tool for searching and downloading files from GitLab repositori
 - **Progress Tracking**: Real-time progress bar with success/skip/fail counters
 - **Detailed Logging**: Complete download log with timestamps and error details
 - **Metadata Export**: JSON file mapping downloaded files to their source locations
+- **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ## Prerequisites
 
@@ -107,7 +108,7 @@ glab-search-code 'import requests' --hostname gitlab.example.com --max-retries 5
 
 ## Output
 
-All downloads are stored in `/tmp/glab-code-search-<timestamp>/`:
+All downloads are stored in your system's temp directory (e.g., `/tmp/glab-code-search-<timestamp>/` on Unix-like systems, `%TEMP%\glab-code-search-<timestamp>\` on Windows):
 
 - Downloaded files with sanitized names (`project__path__to__file.ext`)
 - `metadata.json`: Maps downloaded files to their GitLab source locations

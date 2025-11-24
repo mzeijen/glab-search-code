@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -42,7 +43,21 @@ def is_interactive_terminal() -> bool:
         return False
 
     # Check if both stdin and stdout are TTYs
-    return sys.stdin.isatty() and sys.stdout.isatty()
+    is_tty = sys.stdin.isatty() and sys.stdout.isatty()
+
+    # Enable ANSI color codes on Windows 10+ terminals
+    if is_tty and os.name == "nt":
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            # Enable ANSI escape sequences in Windows console
+            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+        except Exception:
+            # If we can't enable colors on Windows, that's okay
+            pass
+
+    return is_tty
 
 
 class Colors:
@@ -61,7 +76,11 @@ def get_glab_hostnames() -> list[str]:
     # Parse glab config to get available GitLab hostnames. This ensures users
     # can only specify hostnames they've already configured, preventing typos
     # and misconfiguration.
-    config_path = Path.home() / ".config" / "glab-cli" / "config.yml"
+    # Use Path for cross-platform compatibility (Windows uses different config location)
+    if os.name == "nt":  # Windows
+        config_path = Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
+    else:  # Unix-like systems
+        config_path = Path.home() / ".config" / "glab-cli" / "config.yml"
 
     if not config_path.exists():
         return []
@@ -97,7 +116,9 @@ class GitLabSearcher:
         self.is_interactive = is_interactive_terminal()
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = Path(f"/tmp/glab-code-search-{timestamp}")
+        # Use platform-agnostic temp directory (handles Windows/Unix/Mac)
+        temp_base = Path(tempfile.gettempdir())
+        self.output_dir = temp_base / f"glab-code-search-{timestamp}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.log_file = self.output_dir / "download.log"
@@ -486,7 +507,11 @@ Examples:
     # ensure authentication is set up.
     if not available_hosts:
         print(f"{Colors.RED}Error: Could not read glab config file{Colors.NC}")
-        print(f"Expected location: {Path.home() / '.config' / 'glab-cli' / 'config.yml'}")
+        if os.name == "nt":
+            expected_path = Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
+        else:
+            expected_path = Path.home() / ".config" / "glab-cli" / "config.yml"
+        print(f"Expected location: {expected_path}")
         sys.exit(1)
 
     if args.hostname not in available_hosts:
