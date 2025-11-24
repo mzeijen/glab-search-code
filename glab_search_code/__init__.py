@@ -72,15 +72,24 @@ class Colors:
     NC = "\033[0m" if _is_interactive else ""
 
 
+def get_glab_config_path() -> Path:
+    """
+    Get the platform-specific path to the glab config file.
+
+    Returns:
+        Path to config.yml for glab-cli (Windows uses AppData/Local, Unix uses .config)
+    """
+    if os.name == "nt":  # Windows
+        return Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
+    else:  # Unix-like systems
+        return Path.home() / ".config" / "glab-cli" / "config.yml"
+
+
 def get_glab_hostnames() -> list[str]:
     # Parse glab config to get available GitLab hostnames. This ensures users
     # can only specify hostnames they've already configured, preventing typos
     # and misconfiguration.
-    # Use Path for cross-platform compatibility (Windows uses different config location)
-    if os.name == "nt":  # Windows
-        config_path = Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
-    else:  # Unix-like systems
-        config_path = Path.home() / ".config" / "glab-cli" / "config.yml"
+    config_path = get_glab_config_path()
 
     if not config_path.exists():
         return []
@@ -507,11 +516,7 @@ Examples:
     # ensure authentication is set up.
     if not available_hosts:
         print(f"{Colors.RED}Error: Could not read glab config file{Colors.NC}")
-        if os.name == "nt":
-            expected_path = Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
-        else:
-            expected_path = Path.home() / ".config" / "glab-cli" / "config.yml"
-        print(f"Expected location: {expected_path}")
+        print(f"Expected location: {get_glab_config_path()}")
         sys.exit(1)
 
     if args.hostname not in available_hosts:
