@@ -81,6 +81,8 @@ def get_glab_config_path() -> Path:
     """
     if os.name == "nt":  # Windows
         return Path.home() / "AppData" / "Local" / "glab-cli" / "config.yml"
+    if os.name == "posix":  # Mac
+        return Path.home() / "Library" / "Application Support" / "glab-cli" / "config.yml"
     else:  # Unix-like systems
         return Path.home() / ".config" / "glab-cli" / "config.yml"
 
@@ -239,7 +241,15 @@ class GitLabSearcher:
 
         unique_projects = {str(r["project_id"]) for r in results}
 
-        tasks = [self.get_project_path(pid) for pid in unique_projects]
+        # Limit concurrent API calls to avoid exhausting file descriptors when
+        # spawning many subprocesses simultaneously.
+        semaphore = asyncio.Semaphore(self.workers)
+
+        async def fetch_with_limit(pid: str):
+            async with semaphore:
+                return await self.get_project_path(pid)
+
+        tasks = [fetch_with_limit(pid) for pid in unique_projects]
         await asyncio.gather(*tasks)
 
         self.log(f"Project cache completed: {len(unique_projects)} projects")
