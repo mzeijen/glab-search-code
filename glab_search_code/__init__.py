@@ -3,11 +3,12 @@
 GitLab Code Search & Download Tool
 
 Usage:
-    glab-search-code <search_query> --hostname HOST [--workers N]
+    glab-search-code <search_query> --hostname HOST [--group GROUP] [--workers N]
 
 Examples:
     glab-search-code 'GeneratedValue' --hostname gitlab.example.com
-    glab-search-code 'class MyService' --hostname gitlab.example.com --workers 20
+    glab-search-code 'class MyService' --hostname gitlab.example.com --group my-org/my-team
+    glab-search-code 'import requests' --hostname gitlab.example.com --workers 20
 """
 
 import argparse
@@ -113,6 +114,7 @@ class GitLabSearcher:
         self,
         search_term: str,
         hostname: str | None = None,
+        group: str | None = None,
         workers: int = 10,
         max_retries: int = 3,
         retry_delay: int = 2,
@@ -121,6 +123,7 @@ class GitLabSearcher:
         # multiple searches, and sanitizing ensures filesystem compatibility.
         self.search_term = search_term
         self.hostname = hostname
+        self.group = group
         self.workers = workers
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -185,9 +188,14 @@ class GitLabSearcher:
         self.print_color("\nFetching all search results (this may take a moment)...", Colors.BLUE)
         self.log(f"Starting search for: {self.search_term}")
 
-        stdout, stderr, code = await self.run_glab(
-            "api", f"search?scope=blobs&search={self.search_term}&per_page=100", "--paginate"
-        )
+        # Build the search endpoint - use group-scoped search if group is specified
+        if self.group:
+            encoded_group = quote(self.group, safe="")
+            endpoint = f"groups/{encoded_group}/search?scope=blobs&search={self.search_term}&per_page=100"
+        else:
+            endpoint = f"search?scope=blobs&search={self.search_term}&per_page=100"
+
+        stdout, stderr, code = await self.run_glab("api", endpoint, "--paginate")
 
         if code != 0:
             self.log(f"ERROR: Search failed - {stderr}")
@@ -417,6 +425,8 @@ class GitLabSearcher:
             self.print_color("========================================", Colors.BLUE)
             if self.hostname:
                 self.print_color(f"GitLab hostname: {Colors.YELLOW}{self.hostname}{Colors.NC}")
+            if self.group:
+                self.print_color(f"Group: {Colors.YELLOW}{self.group}{Colors.NC}")
             self.print_color(f"Search query: {Colors.YELLOW}{self.search_term}{Colors.NC}")
             self.print_color(f"Output directory: {Colors.YELLOW}{self.output_dir}{Colors.NC}")
             self.print_color(f"Parallel jobs: {Colors.YELLOW}{self.workers}{Colors.NC}")
@@ -503,11 +513,13 @@ async def main():
         epilog="""
 Examples:
   %(prog)s 'GeneratedValue' --hostname gitlab.example.com
-  %(prog)s 'class MyService' --hostname gitlab.example.com --workers 20
+  %(prog)s 'class MyService' --hostname gitlab.example.com --group my-org/my-team
+  %(prog)s 'import requests' --hostname gitlab.example.com --workers 20
         """,
     )
     parser.add_argument("search_query", help="Search term to find in GitLab")
     parser.add_argument("--hostname", required=True, help=hostname_help)
+    parser.add_argument("--group", help="Limit search to a specific GitLab group (e.g., my-org/my-team)")
     parser.add_argument("--workers", type=int, default=10, help="Number of parallel downloads (default: 10)")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retries for rate-limited requests (default: 3)")
 
@@ -542,7 +554,7 @@ Examples:
         sys.exit(1)
 
     searcher = GitLabSearcher(
-        args.search_query, hostname=args.hostname, workers=args.workers, max_retries=args.max_retries
+        args.search_query, hostname=args.hostname, group=args.group, workers=args.workers, max_retries=args.max_retries
     )
     await searcher.run()
 

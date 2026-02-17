@@ -4,6 +4,7 @@ A powerful async tool for searching and downloading files from GitLab repositori
 
 ## Features
 
+- **Group-Scoped Search**: Limit searches to a specific GitLab group
 - **Async Parallel Downloads**: Configure the number of concurrent workers to optimize download speed
 - **Smart Rate Limiting**: Automatic retry with exponential backoff for rate-limited requests
 - **Project Caching**: Minimizes API calls by caching project information
@@ -83,6 +84,14 @@ glab-search-code 'your-search-query' --hostname gitlab.example.com
 glab-search-code 'GeneratedValue' --hostname gitlab.example.com
 ```
 
+### Search Within a Group
+
+Limit search to a specific GitLab group:
+
+```bash
+glab-search-code 'class MyService' --hostname gitlab.example.com --group my-org/my-team
+```
+
 ### Custom Worker Count
 
 Increase parallel downloads for faster processing:
@@ -103,6 +112,7 @@ glab-search-code 'import requests' --hostname gitlab.example.com --max-retries 5
 
 - `search_query` (required): The search term to find in GitLab repositories
 - `--hostname` (required): GitLab hostname to search (must be configured in glab)
+- `--group` (optional): Limit search to a specific GitLab group (e.g., `my-org/my-team`)
 - `--workers` (optional): Number of parallel downloads (default: 10, range: 1-50)
 - `--max-retries` (optional): Maximum retries for rate-limited requests (default: 3)
 
